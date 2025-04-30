@@ -107,55 +107,82 @@ export async function POST(request: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const body = await req.json();
-    const { affiliationId, userId } = body;
+    const { affiliationId, clientId, userId } = body; // Ahora esperamos recibir clientId
 
-    if (!affiliationId || !userId) {
-      return new NextResponse(JSON.stringify({ message: 'Faltan datos requeridos (affiliationId y userId)' }), {
-        status: 400,
-      });
+    if (!affiliationId || !clientId || !userId) {
+      return new NextResponse(
+        JSON.stringify({ message: 'Faltan datos requeridos (affiliationId, clientId y userId)' }),
+        { status: 400 }
+      );
     }
 
-    // Verificamos que la afiliación exista y esté activa
+    // **Verificación de que la afiliación exista y esté activa**
     const affiliationCheck = await pool.query(
       'SELECT 1 FROM monthly_affiliations WHERE id = $1 AND is_active = TRUE',
       [affiliationId]
     );
 
     if (affiliationCheck.rowCount === 0) {
-      return new NextResponse(JSON.stringify({ message: 'Afiliación no encontrada o ya eliminada' }), {
-        status: 404,
-      });
+      return new NextResponse(
+        JSON.stringify({ message: 'Afiliación no encontrada o ya eliminada' }),
+        { status: 404 }
+      );
     }
 
-    // Verificamos que el usuario tenga permiso para eliminar (es quien creó la afiliación)
+    // **Verificación de que el usuario tenga permiso para eliminar (es quien creó la afiliación)**
     const userPermissionCheck = await pool.query(
       'SELECT 1 FROM monthly_affiliations WHERE id = $1 AND user_id = $2',
       [affiliationId, userId]
     );
 
     if (userPermissionCheck.rowCount === 0) {
-      return new NextResponse(JSON.stringify({ message: 'El usuario no tiene permisos para eliminar esta afiliación' }), {
-        status: 403,
-      });
+      return new NextResponse(
+        JSON.stringify({ message: 'El usuario no tiene permisos para eliminar esta afiliación' }),
+        { status: 403 }
+      );
     }
 
-    // Eliminación lógica
-    await pool.query(
-      `UPDATE monthly_affiliations
-       SET is_active = FALSE,
-           deleted_at = CURRENT_TIMESTAMP,
-           deleted_by = $1
-       WHERE id = $2`,
-      [userId, affiliationId]
-    );
+    // **Inicio de una transacción para asegurar la atomicidad de las operaciones**
+    await pool.query('BEGIN');
 
-    return new NextResponse(JSON.stringify({ message: 'Afiliación eliminada correctamente' }), {
-      status: 200,
-    });
+    try {
+      // **Eliminación lógica de la afiliación**
+      await pool.query(
+        `UPDATE monthly_affiliations
+         SET is_active = FALSE,
+             deleted_at = CURRENT_TIMESTAMP,
+             deleted_by = $1
+         WHERE id = $2`,
+        [userId, affiliationId]
+      );
+
+      // **Eliminación lógica del cliente**
+      await pool.query(
+        `UPDATE clients
+         SET is_active = FALSE,
+             updated_at = CURRENT_TIMESTAMP -- Puedes agregar una columna deleted_at y deleted_by si lo deseas también para la tabla clients
+         WHERE id = $1`,
+        [clientId]
+      );
+
+      // **Confirmar la transacción**
+      await pool.query('COMMIT');
+
+      return new NextResponse(
+        JSON.stringify({ message: 'Afiliación y cliente eliminados correctamente' }),
+        { status: 200 }
+      );
+    } catch (transactionError) {
+      // **Revertir la transacción en caso de error**
+      await pool.query('ROLLBACK');
+      console.error('Error al eliminar afiliación y cliente (transacción):', transactionError);
+      return new NextResponse(
+        JSON.stringify({ message: 'Error al eliminar la afiliación y el cliente' }),
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error('Error al eliminar afiliación:', error);
-    return new NextResponse(JSON.stringify({ message: 'Error del servidor' }), {
-      status: 500,
-    });
+    console.error('Error al eliminar afiliación y cliente:', error);
+    return new NextResponse(JSON.stringify({ message: 'Error del servidor' }), { status: 500 });
   }
 }
