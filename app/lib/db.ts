@@ -1,16 +1,17 @@
 // lib/db.ts
 import { Pool } from 'pg';
 
+
 declare global {
   var pgPool: Pool | undefined;
 }
 
 const pool = global.pgPool ?? new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: Number(process.env.DB_PORT),
+  user: 'postgres',
+  host: 'shinkansen.proxy.rlwy.net',
+  database: 'railway',
+  password: 'MVzEveEWbtmGadKWnBkdwXLVCPORrJcA',
+  port: 17835,
 });
 
 if (process.env.NODE_ENV !== 'production') global.pgPool = pool;
