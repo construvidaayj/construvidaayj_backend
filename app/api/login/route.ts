@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Faltan campos' }, { status: 400 });
     }
 
+
     // Verificar que el usuario exista
     const result = await pool.query(
       'SELECT id, username, password_hash, role FROM users WHERE username = $1',
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     );
 
     const user = result.rows[0];
-    console.log(`resultado de la consulta SQL ${result}`);
+  
     if (!user) {
       return NextResponse.json({ message: 'Usuario no encontrado' }, { status: 401 });
     }
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
        WHERE uo.user_id = $1`,
       [user.id]
     );
-    
+
     const offices = officesResult.rows.map(row => ({
       office_id: row.office_id,
       name: row.name,
