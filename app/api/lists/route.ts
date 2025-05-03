@@ -13,15 +13,17 @@ type ListsResponse = {
   arl: ListItem[];
   ccf: ListItem[];
   pensionFunds: ListItem[];
+  companies: ListItem[];
 };
 
 export async function GET(_req: NextRequest): Promise<NextResponse<ListsResponse | { message: string }>> {
   try {
-    const [epsResult, arlResult, ccfResult, pensionFundResult] = await Promise.all([
+    const [epsResult, arlResult, ccfResult, pensionFundResult, companiesResult] = await Promise.all([
       pool.query<ListItem>('SELECT id, name FROM eps_list ORDER BY name ASC'),
       pool.query<ListItem>('SELECT id, name FROM arl_list ORDER BY name ASC'),
       pool.query<ListItem>('SELECT id, name FROM ccf_list ORDER BY name ASC'),
       pool.query<ListItem>('SELECT id, name FROM pension_fund_list ORDER BY name ASC'),
+      pool.query<ListItem>('SELECT id, name FROM companies ORDER BY name ASC'),
     ]);
 
     const response: ListsResponse = {
@@ -29,6 +31,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse<ListsResponse
       arl: arlResult.rows,
       ccf: ccfResult.rows,
       pensionFunds: pensionFundResult.rows,
+      companies: companiesResult.rows,
     };
 
     return NextResponse.json(response);
