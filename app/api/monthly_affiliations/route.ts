@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
               row.value,
               row.risk,
               row.observation,
-              'Pending',
+              'Pendiente',
               row.date_paid_received,
               row.eps_id,
               row.arl_id,
