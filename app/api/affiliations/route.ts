@@ -153,15 +153,15 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
-export async function PUT(request: NextResponse) {
+export async function PUT(request: NextRequest) {
   try {
     const {
       affiliationId,
       clientId,
       fullName,
       identification,
-      companyId, // Nuevo campo
-      phones, // Nuevo campo: array de strings
+      companyId, 
+      phones, 
       value,
       eps,
       arl,
@@ -173,7 +173,7 @@ export async function PUT(request: NextResponse) {
       datePaidReceived,
     } = await request.json();
 
-    console.log('🔄 DATOS RECIBIDOS PARA ACTUALIZAR:', {
+    console.log('DATOS RECIBIDOS PARA ACTUALIZAR:', {
       affiliationId,
       clientId,
       fullName,
