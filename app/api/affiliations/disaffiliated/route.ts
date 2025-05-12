@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       `,
             [clientId, reason || null, cost || 0, processedBy, observation || null]
         );
-
+        console.log(`Desafiliación registrada correctamente: ${body}`);
         return new NextResponse(
             JSON.stringify({ message: 'Desafiliación registrada correctamente.' }),
             { status: 201 }
