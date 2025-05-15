@@ -20,7 +20,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
       UPDATE monthly_affiliations
       SET 
         paid = $1,
-        date_paid_received = $2,
+        gov_registry_completed_at = $2,
         updated_at = CURRENT_TIMESTAMP
       WHERE 
         id = $3
