@@ -91,8 +91,7 @@ export async function POST(request: NextRequest) {
       risk: row.risk,
       observation: row.observation,
       paid: row.paid,
-      datePaidReceived: row.date_paid_received,
-      govRegistryCompletedAt: row.gov_registry_completed_at,
+      govRegistryCompletedAt: row.govRegistryCompletedAt,
       eps: row.eps,
       arl: row.arl,
       ccf: row.ccf,
@@ -162,8 +161,8 @@ export async function PUT(request: NextRequest) {
       clientId,
       fullName,
       identification,
-      companyId, 
-      phones, 
+      companyId,
+      phones,
       value,
       eps,
       arl,
@@ -172,7 +171,7 @@ export async function PUT(request: NextRequest) {
       pensionFund,
       paid,
       observation,
-      datePaidReceived,
+      govRegistryCompletedAt,
     } = await request.json();
 
     console.log('DATOS RECIBIDOS PARA ACTUALIZAR:', {
@@ -190,7 +189,7 @@ export async function PUT(request: NextRequest) {
       pensionFund,
       paid,
       observation,
-      datePaidReceived,
+      govRegistryCompletedAt,
     });
 
     if (!affiliationId || !clientId) {
@@ -223,7 +222,7 @@ export async function PUT(request: NextRequest) {
                 pension_fund_id = $6,
                 paid = $7,
                 observation = $8,
-                date_paid_received = $9,
+                gov_registry_completed_at = $9,
                 updated_at = NOW()
             WHERE id = $10
         `;
@@ -237,7 +236,7 @@ export async function PUT(request: NextRequest) {
       pensionFundId,
       paid,
       observation,
-      datePaidReceived || null,
+      govRegistryCompletedAt || null,
       affiliationId,
     ];
 
