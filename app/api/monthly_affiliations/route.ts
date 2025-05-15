@@ -3,6 +3,7 @@ import { verifyToken } from '@/app/lib/auth/jwt';
 import { pool } from '@/app/lib/db';
 
 export async function POST(request: NextRequest) {
+  //Hmeos recuperado la rama donde teniamos los cambio  fulll y funcionando
   try {
     const authHeader = request.headers.get('authorization');
     const token = authHeader?.split(' ')[1];

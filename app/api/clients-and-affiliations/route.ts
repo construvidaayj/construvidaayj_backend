@@ -2,6 +2,7 @@ import { pool } from '@/app/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
+    //Hmeos recuperado la rama donde teniamos los cambio  fulll y funcionandos
     try {
         const body = await req.json();
         const {
