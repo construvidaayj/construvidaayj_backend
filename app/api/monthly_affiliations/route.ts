@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     // Ahora que encontramos una afiliación activa en la oficina seleccionada, vamos a copiarla al mes y año actual con estado "pendiente"
     const copyAffiliations = await pool.query(
-      `SELECT ma.client_id, ma.value, ma.risk, ma.observation, ma.paid, ma.date_paid_received,
+      `SELECT ma.client_id, ma.value, ma.risk, ma.observation, ma.paid, ma.date_paid_received, ma.gov_registry_completed_at,
               ma.eps_id, ma.arl_id, ma.ccf_id, ma.pension_fund_id, ma.companies_id
              FROM monthly_affiliations ma
              WHERE ma.month = $1 AND ma.year = $2 AND ma.office_id = $3 AND ma.is_active = true`,
@@ -107,8 +107,8 @@ export async function POST(request: NextRequest) {
 
           // Insertamos la nueva afiliación
           await client.query(
-            `INSERT INTO monthly_affiliations (client_id, month, year, value, risk, observation, paid, date_paid_received, eps_id, arl_id, ccf_id, pension_fund_id, office_id, user_id, companies_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+            `INSERT INTO monthly_affiliations (client_id, month, year, value, risk, observation, paid, date_paid_received, ma.gov_registry_completed_at, eps_id, arl_id, ccf_id, pension_fund_id, office_id, user_id, companies_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
             [
               row.client_id,
               currentMonth,
@@ -118,13 +118,14 @@ export async function POST(request: NextRequest) {
               row.observation,
               'Pendiente',
               row.date_paid_received,
+              row.gov_registry_completed_at,
               row.eps_id,
               row.arl_id,
               row.ccf_id,
               row.pension_fund_id,
               office_id,
               userId,
-              row.companies_id // Se copia el companies_id
+              row.companies_id 
             ]
           );
           console.log(`Afiliación insertada para cliente ${row.client_id} en la oficina ${office_id}`);

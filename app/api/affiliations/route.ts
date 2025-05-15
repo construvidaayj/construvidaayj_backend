@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
       ma.observation,
       ma.paid,
       TO_CHAR(ma.date_paid_received, 'YYYY-MM-DD') AS date_paid_received,
+      TO_CHAR(ma.gov_registry_completed_at, 'YYYY-MM-DD') AS gov_registry_completed_at,
       eps.name AS eps,
       arl.name AS arl,
       ccf.name AS ccf,
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
     LEFT JOIN pension_fund_list pf ON ma.pension_fund_id = pf.id
     LEFT JOIN client_phones cp ON c.id = cp.client_id -- Join con la tabla client_phones
     WHERE ma.office_id = $1
-    GROUP BY c.id, c.full_name, c.identification, comp.name, ma.id, ma.value, ma.risk, ma.observation, ma.paid, ma.date_paid_received, eps.name, arl.name, ccf.name, pf.name
+    GROUP BY c.id, c.full_name, c.identification, comp.name, ma.id, ma.value, ma.risk, ma.observation, ma.paid, ma.date_paid_received, ma.gov_registry_completed_at, eps.name, arl.name, ccf.name, pf.name
     ORDER BY c.full_name;
     `;
 
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest) {
       observation: row.observation,
       paid: row.paid,
       datePaidReceived: row.date_paid_received,
+      govRegistryCompletedAt: row.gov_registry_completed_at,
       eps: row.eps,
       arl: row.arl,
       ccf: row.ccf,
