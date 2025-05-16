@@ -34,6 +34,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse<ListsResponse
       companies: companiesResult.rows,
     };
 
+    console.log(`Entregamos las listas:::: ${response}`);
     return NextResponse.json(response);
   } catch (error: unknown) {
     if (error instanceof Error) {
