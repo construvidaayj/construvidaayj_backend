@@ -2,7 +2,7 @@ import { pool } from '@/app/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-    //Hmeos recuperado la rama donde teniamos los cambio  fulll y funcionandos
+    //Hmeos recuperado la rama donde teniamos los cambio   fulll y funcionandos
     try {
         const body = await req.json();
         const {
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
             affiliation,
             userId,
             companyId, // Ahora se espera companyId
-            phones,    // Ahora se espera el array de teléfonos
+            phones,     // Ahora se espera el array de teléfonos
         } = body;
 
         console.log(`
