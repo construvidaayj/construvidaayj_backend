@@ -2,7 +2,6 @@ import { pool } from '@/app/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-    //Hmeos recuperado la rama donde teniamos los cambio   fulll y funcionandos
     try {
         const body = await req.json();
         const {
@@ -11,8 +10,8 @@ export async function POST(req: NextRequest) {
             officeId,
             affiliation,
             userId,
-            companyId, // Ahora se espera companyId
-            phones,     // Ahora se espera el array de teléfonos
+            companyId,
+            phones,
         } = body;
 
         console.log(`
@@ -28,6 +27,7 @@ export async function POST(req: NextRequest) {
         const now = new Date();
         const currentMonth = now.getMonth() + 1;
         const currentYear = now.getFullYear();
+        const today = now; // Obtiene la fecha y hora actual como objeto Date
 
         let clientId: number;
 
@@ -76,16 +76,28 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Crear la afiliación para el cliente (existente o nuevo)
-        await pool.query(
+        const datePaidReceived = affiliation.datePaidReceived || today; // Usa la fecha y hora actual si no se proporciona
+        let govRegistryCompletedAt = affiliation.govRegistryCompletedAt || null; // Inicializa con el valor del frontend o null
+        const paid = affiliation.paid; // Recibe el estado de pago del body
+
+        // Si el pago está marcado como "Pagado", establece govRegistryCompletedAt a la fecha actual
+        if (paid === 'Pagado') {
+            govRegistryCompletedAt = today;
+        }
+
+        const affiliationResult = await pool.query( // Cambiado a affiliationResult
             `INSERT INTO monthly_affiliations (
                 client_id, month, year, value,
                 eps_id, arl_id, ccf_id, pension_fund_id,
-                risk, observation, user_id, office_id, companies_id
+                risk, observation, user_id, office_id, companies_id,
+                date_paid_received, gov_registry_completed_at, paid
             ) VALUES (
                 $1, $2, $3, $4,
                 $5, $6, $7, $8,
-                $9, $10, $11, $12, $13
-            )`,
+                $9, $10, $11, $12, $13,
+                $14, $15, $16
+            )
+            RETURNING *`, // Devuelve todas las columnas de la inserción
             [
                 clientId,
                 currentMonth,
@@ -100,10 +112,45 @@ export async function POST(req: NextRequest) {
                 userId,
                 officeId,
                 companyId,
+                datePaidReceived,
+                govRegistryCompletedAt,
+                paid, // Pasa el estado de pago a la consulta
             ]
         );
 
-        return NextResponse.json({ success: true, clientId });
+        // 4. Construir la respuesta incluyendo los datos de la afiliación creada.
+        const newAffiliation = affiliationResult.rows[0];  // Accedemos a la primera fila del resultado
+        const formattedDatePaidReceived = newAffiliation.date_paid_received
+            ? new Date(newAffiliation.date_paid_received).toISOString()
+            : null;
+        const formattedGovRegistryCompletedAt = newAffiliation.gov_registry_completed_at
+            ? new Date(newAffiliation.gov_registry_completed_at).toISOString()
+            : null;
+
+        const responseData = {
+            success: true,
+            clientId,
+            affiliation: { // Incluimos los datos de la nueva afiliación
+                id: newAffiliation.id,
+                month: newAffiliation.month,
+                year: newAffiliation.year,
+                value: newAffiliation.value,
+                epsId: newAffiliation.eps_id,
+                arlId: newAffiliation.arl_id,
+                ccfId: newAffiliation.ccf_id,
+                pensionFundId: newAffiliation.pension_fund_id,
+                risk: newAffiliation.risk,
+                observation: newAffiliation.observation,
+                userId: newAffiliation.user_id,
+                officeId: newAffiliation.office_id,
+                companiesId: newAffiliation.companies_id,
+                paid: newAffiliation.paid,
+                datePaidReceived: formattedDatePaidReceived,
+                govRegistryCompletedAt: formattedGovRegistryCompletedAt,
+            },
+        };
+
+        return NextResponse.json(responseData);
 
     } catch (error) {
         console.error('Error en POST /api/clients-and-affiliations:', error);

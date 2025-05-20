@@ -38,38 +38,38 @@ export async function POST(request: NextRequest) {
 
     // Consulta los clientes afiliados en ese mes y año EN ESA OFICINA
     const query = `
-     SELECT
-      c.id AS client_id,
-      c.full_name,
-      c.identification,
-      comp.name AS company_name, -- Añadir el nombre de la compañía
-      ma.id AS affiliation_id,
-      ma.value,
-      ma.risk,
-      ma.observation,
-      ma.paid,
-      TO_CHAR(ma.date_paid_received, 'YYYY-MM-DD') AS date_paid_received,
-      TO_CHAR(ma.gov_registry_completed_at, 'YYYY-MM-DD') AS gov_registry_completed_at,
-      eps.name AS eps,
-      arl.name AS arl,
-      ccf.name AS ccf,
-      pf.name AS pension_fund,
-      array_agg(cp.phone_number) AS phones -- Agrupar los teléfonos en un array
-    FROM monthly_affiliations ma
-    INNER JOIN clients c ON c.id = ma.client_id
-    AND ma.month = $2
-    AND ma.year = $3
-    AND ma.is_active = TRUE
-    AND ma.deleted_at IS NULL
-    INNER JOIN companies comp ON c.companies_id = comp.id -- Join con la tabla companies
-    LEFT JOIN eps_list eps ON ma.eps_id = eps.id
-    LEFT JOIN arl_list arl ON ma.arl_id = arl.id
-    LEFT JOIN ccf_list ccf ON ma.ccf_id = ccf.id
-    LEFT JOIN pension_fund_list pf ON ma.pension_fund_id = pf.id
-    LEFT JOIN client_phones cp ON c.id = cp.client_id -- Join con la tabla client_phones
-    WHERE ma.office_id = $1
-    GROUP BY c.id, c.full_name, c.identification, comp.name, ma.id, ma.value, ma.risk, ma.observation, ma.paid, ma.date_paid_received, ma.gov_registry_completed_at, eps.name, arl.name, ccf.name, pf.name
-    ORDER BY c.full_name;
+      SELECT
+        c.id AS client_id,
+        c.full_name,
+        c.identification,
+        comp.name AS company_name,
+        ma.id AS affiliation_id,
+        ma.value,
+        ma.risk,
+        ma.observation,
+        ma.paid,
+        TO_CHAR(ma.date_paid_received, 'YYYY-MM-DD') AS datePaidReceived,
+        TO_CHAR(ma.gov_registry_completed_at, 'YYYY-MM-DD') AS govRegistryCompletedAt,
+        eps.name AS eps,
+        arl.name AS arl,
+        ccf.name AS ccf,
+        pf.name AS pensionFund,
+        array_agg(cp.phone_number) AS phones
+      FROM monthly_affiliations ma
+      INNER JOIN clients c ON c.id = ma.client_id
+        AND ma.month = $2
+        AND ma.year = $3
+        AND ma.is_active = TRUE
+        AND ma.deleted_at IS NULL
+      INNER JOIN companies comp ON c.companies_id = comp.id
+      LEFT JOIN eps_list eps ON ma.eps_id = eps.id
+      LEFT JOIN arl_list arl ON ma.arl_id = arl.id
+      LEFT JOIN ccf_list ccf ON ma.ccf_id = ccf.id
+      LEFT JOIN pension_fund_list pf ON ma.pension_fund_id = pf.id
+      LEFT JOIN client_phones cp ON c.id = cp.client_id
+      WHERE ma.office_id = $1
+      GROUP BY c.id, c.full_name, c.identification, comp.name, ma.id, ma.value, ma.risk, ma.observation, ma.paid, ma.date_paid_received, ma.gov_registry_completed_at, eps.name, arl.name, ccf.name, pf.name
+      ORDER BY c.full_name;
     `;
 
     const res = await pool.query(query, [officeId, monthNum, yearNum]);
@@ -86,18 +86,20 @@ export async function POST(request: NextRequest) {
       affiliationId: row.affiliation_id,
       fullName: row.full_name,
       identification: row.identification,
-      companyName: row.company_name, // Nuevo campo
+      companyName: row.company_name,
       value: row.value,
       risk: row.risk,
       observation: row.observation,
       paid: row.paid,
-      govRegistryCompletedAt: row.govRegistryCompletedAt,
+      datePaidReceived: row.datepaidreceived,
+      govRegistryCompletedAt: row.govregistrycompletedat,
       eps: row.eps,
       arl: row.arl,
       ccf: row.ccf,
-      pensionFund: row.pension_fund,
-      phones: row.phones || [], // Nuevo campo, asegurar que sea un array (puede ser null si no hay teléfonos)
+      pensionFund: row.pensionfund,
+      phones: row.phones || [],
     }));
+
     return NextResponse.json(data, { status: 200 });
 
   } catch (error) {
@@ -172,9 +174,10 @@ export async function PUT(request: NextRequest) {
       paid,
       observation,
       govRegistryCompletedAt,
+      datePaidReceived // Asegúrate de recibir este campo
     } = await request.json();
 
-    console.log('DATOS RECIBIDOS PARA ACTUALIZAR:', {
+    console.log('DATOS RECIBIDOS DESDE EL FRONT:', {
       affiliationId,
       clientId,
       fullName,
@@ -190,6 +193,7 @@ export async function PUT(request: NextRequest) {
       paid,
       observation,
       govRegistryCompletedAt,
+      datePaidReceived
     });
 
     if (!affiliationId || !clientId) {
@@ -202,7 +206,9 @@ export async function PUT(request: NextRequest) {
     const getCatalogId = async (table: string, name: string) => {
       if (!name) return null;
       const res = await pool.query(`SELECT id FROM ${table} WHERE name = $1`, [name]);
-      return res.rows[0]?.id || null;
+      const catalogId = res.rows[0]?.id || null;
+      console.log(`ID obtenido de ${table} para "${name}":`, catalogId);
+      return catalogId;
     };
 
     const epsId = await getCatalogId('eps_list', eps);
@@ -210,21 +216,24 @@ export async function PUT(request: NextRequest) {
     const ccfId = await getCatalogId('ccf_list', ccf);
     const pensionFundId = await getCatalogId('pension_fund_list', pensionFund);
 
+    console.log('ID\'s de catálogos obtenidos:', { epsId, arlId, ccfId, pensionFundId });
+
     // Actualizar la tabla monthly_affiliations
     const affiliationQuery = `
-            UPDATE monthly_affiliations
-            SET
-                value = $1,
-                eps_id = $2,
-                arl_id = $3,
-                risk = $4,
-                ccf_id = $5,
-                pension_fund_id = $6,
-                paid = $7,
-                observation = $8,
-                gov_registry_completed_at = $9,
-                updated_at = NOW()
-            WHERE id = $10
+          UPDATE monthly_affiliations
+          SET
+            value = $1,
+            eps_id = $2,
+            arl_id = $3,
+            risk = $4,
+            ccf_id = $5,
+            pension_fund_id = $6,
+            paid = $7,
+            observation = $8,
+            gov_registry_completed_at = $9,
+            date_paid_received = $10,
+            updated_at = NOW()
+          WHERE id = $11
         `;
 
     const affiliationValues = [
@@ -237,10 +246,15 @@ export async function PUT(request: NextRequest) {
       paid,
       observation,
       govRegistryCompletedAt || null,
+      datePaidReceived || null, // Incluye datePaidReceived
       affiliationId,
     ];
 
+    console.log('Query para monthly_affiliations:', affiliationQuery);
+    console.log('Valores para monthly_affiliations:', affiliationValues);
+
     const affiliationResult = await pool.query(affiliationQuery, affiliationValues);
+    console.log('Resultado de la actualización de monthly_affiliations:', affiliationResult);
 
     if (affiliationResult.rowCount === 0) {
       return NextResponse.json(
@@ -253,14 +267,17 @@ export async function PUT(request: NextRequest) {
     const clientQuery = `
         UPDATE clients
         SET
-            full_name = $1,
-            identification = $2,
-            companies_id = $3,
-            updated_at = NOW()
+          full_name = $1,
+          identification = $2,
+          companies_id = $3,
+          updated_at = NOW()
         WHERE id = $4
     `;
     const clientValues = [fullName, identification, companyId, clientId];
+    console.log('Query para clients:', clientQuery);
+    console.log('Valores para clients:', clientValues);
     const clientResult = await pool.query(clientQuery, clientValues);
+    console.log('Resultado de la actualización de clients:', clientResult);
 
     if (clientResult.rowCount === 0) {
       return NextResponse.json(
@@ -271,17 +288,22 @@ export async function PUT(request: NextRequest) {
 
     // Actualizar la tabla client_phones
     // 1. Eliminar los teléfonos existentes para este cliente
+    console.log('Eliminando teléfonos antiguos para el cliente ID:', clientId);
     await pool.query(`DELETE FROM client_phones WHERE client_id = $1`, [clientId]);
+    console.log('Teléfonos antiguos eliminados.');
 
     // 2. Insertar los nuevos números de teléfono
     if (phones && phones.length > 0) {
       const insertPhoneQuery = `
-                INSERT INTO client_phones (client_id, phone_number)
-                VALUES ($1, $2)
-            `;
+            INSERT INTO client_phones (client_id, phone_number)
+            VALUES ($1, $2)
+          `;
+      console.log('Query para insertar teléfonos:', insertPhoneQuery);
       for (const phone of phones) {
+        console.log('Insertando teléfono:', clientId, phone);
         await pool.query(insertPhoneQuery, [clientId, phone]);
       }
+      console.log('Nuevos teléfonos insertados.');
     }
 
     return NextResponse.json(
