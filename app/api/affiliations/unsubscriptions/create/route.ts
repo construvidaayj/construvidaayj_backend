@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "../../lib/db"; // Asegúrate de que este 'pool' esté configurado para MySQL
+import { pool } from "../../../lib/db"; // Asegúrate de que este 'pool' esté configurado para MySQL
 
 export async function POST(req: NextRequest) {
     try {

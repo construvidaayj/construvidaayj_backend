@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 
 export async function GET() {
   try {
-    const password: string = 'angelica2025';
+    const password: string = 'vannesa2025';
 
     // Genera el hash de la contraseña
     const hashedPassword = await bcrypt.hash(password, 10); // 10 es el salt rounds

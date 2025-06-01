@@ -1,0 +1,1 @@
+export type UserRoleType = 'admin' | 'office_manager' | 'viewer';

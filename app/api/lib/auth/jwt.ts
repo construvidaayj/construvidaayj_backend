@@ -1,3 +1,4 @@
+import { UserRoleType } from '@/app/types/roles';
 import jwt, { SignOptions } from 'jsonwebtoken';
 
 // Validamos que la variable exista al cargar el módulo
@@ -11,7 +12,7 @@ if (!JWT_SECRET) {
 export interface JwtUserPayload {
   id: number;
   username: string;
-  role: 'admin' | 'office';
+  role: UserRoleType;
 }
 
 // Función para generar el token

@@ -10,15 +10,22 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "csv-parse": "^5.6.0",
+    "date-fns": "^4.1.0",
+    "formidable": "^3.5.4",
     "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.14.1",
     "next": "15.3.1",
     "pg": "^8.15.6",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.24"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/formidable": "^3.4.5",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^20",
     "@types/pg": "^8.11.14",

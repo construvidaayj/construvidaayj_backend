@@ -1,7 +1,23 @@
-import { pool } from '@/app/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import type { PoolConnection, ResultSetHeader } from 'mysql2/promise';
+import { pool } from '../lib/db'; // Asegúrate de que esta ruta sea correcta
+
+interface AffiliationPayload {
+    value: number;
+    epsId?: number;
+    arlId?: number;
+    ccfId?: number;
+    pensionFundId?: number;
+    risk?: string;
+    observation?: string;
+    datePaidReceived?: string;
+    govRegistryCompletedAt?: string;
+    paid: 'Pagado' | 'Pendiente' | string;
+}
 
 export async function POST(req: NextRequest) {
+    let connection: PoolConnection | undefined;
+
     try {
         const body = await req.json();
         const {
@@ -12,92 +28,110 @@ export async function POST(req: NextRequest) {
             userId,
             companyId,
             phones,
+        }: {
+            fullName: string;
+            identification: string;
+            officeId: number;
+            affiliation: AffiliationPayload;
+            userId: number;
+            companyId: number;
+            phones: string[];
         } = body;
 
-        console.log(`
-            NOMBRE: ${fullName},
-            IDENTIFICACION: ${identification},
-            ID OFICINA: ${officeId},
-            AFILIACION: ${affiliation},
-            ID USUARIO: ${userId},
-            ID EMPRESA: ${companyId},
-            TELEFONOS: ${phones}
-        `);
-
         const now = new Date();
-        const currentMonth = now.getMonth() + 1;
+        const currentMonth = now.getMonth() + 1; // getMonth() es 0-index, por eso +1
         const currentYear = now.getFullYear();
-        const today = now; // Obtiene la fecha y hora actual como objeto Date
+        // today se usa para valores por defecto de TIMESTAMP, formateamos a 'YYYY-MM-DD HH:MM:SS'
+        const currentTimestampFormatted = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
         let clientId: number;
 
-        // 1. Buscar cliente por identificación
-        const existingClientResult = await pool.query(
-            'SELECT id FROM clients WHERE identification = $1',
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+
+        // 1. Verificar si el cliente ya existe
+        const [clientRows] = await connection.execute<any[]>(
+            'SELECT id, company_id FROM clients WHERE identification = ?', // También selecciona company_id para la comparación
             [identification]
         );
 
-        if (existingClientResult.rows.length > 0) {
-            // Cliente ya existe, usar su ID
-            clientId = existingClientResult.rows[0].id;
-            console.log(`Cliente con identificación ${identification} ya existe. Usando clientId: ${clientId}`);
+        if (clientRows.length > 0) {
+            clientId = clientRows[0].id;
+            const existingCompanyId = clientRows[0].company_id;
 
-            // Actualizar la compañía del cliente si se proporciona un nuevo companyId
-            if (companyId) {
-                await pool.query(
-                    'UPDATE clients SET companies_id = $1 WHERE id = $2',
+            // Actualizar compañía si se envía nueva y es diferente de la actual
+            if (companyId && existingCompanyId !== companyId) {
+                await connection.execute(
+                    'UPDATE clients SET company_id = ? WHERE id = ?',
                     [companyId, clientId]
                 );
-                console.log(`Se actualizó la compañía del cliente ${clientId} al id ${companyId}`);
             }
         } else {
-            // Cliente no existe, crear uno nuevo
-            const newClientResult = await pool.query(
-                `INSERT INTO clients (full_name, identification, companies_id)
-                VALUES ($1, $2, $3)
-                RETURNING id`,
+            // Crear nuevo cliente
+            const [clientResult] = await connection.execute<ResultSetHeader>(
+                `INSERT INTO clients (full_name, identification, company_id)
+                VALUES (?, ?, ?)`,
                 [fullName, identification, companyId]
             );
-            clientId = newClientResult.rows[0].id;
-            console.log(`Nuevo cliente creado con clientId: ${clientId}`);
+            clientId = clientResult.insertId;
         }
 
-        // 2. Guardar los números de teléfono del cliente
-        if (phones && Array.isArray(phones) && phones.length > 0) {
+        // 2. Guardar teléfonos (INSERT IGNORE evita duplicados a nivel de BD para client_phones)
+        if (Array.isArray(phones)) {
             for (const phone of phones) {
-                if (phone) { // Evitar guardar cadenas vacías
-                    await pool.query(
-                        'INSERT INTO client_phones (client_id, phone_number) VALUES ($1, $2) ON CONFLICT (client_id, phone_number) DO NOTHING',
+                if (phone.trim() !== '') {
+                    await connection.execute(
+                        `INSERT IGNORE INTO client_phones (client_id, phone_number) VALUES (?, ?)`,
                         [clientId, phone]
                     );
-                    console.log(`Teléfono ${phone} guardado para el cliente ${clientId}`);
                 }
             }
         }
 
-        // 3. Crear la afiliación para el cliente (existente o nuevo)
-        const datePaidReceived = affiliation.datePaidReceived || today; // Usa la fecha y hora actual si no se proporciona
-        let govRegistryCompletedAt = affiliation.govRegistryCompletedAt || null; // Inicializa con el valor del frontend o null
-        const paid = affiliation.paid; // Recibe el estado de pago del body
+        // **3. VERIFICAR DUPLICADOS ACTIVOS A NIVEL DE LÓGICA DE NEGOCIO (¡Nueva lógica aquí!)**
+        const [existingActiveAffiliations] = await connection.execute<any[]>(
+            `SELECT id FROM monthly_affiliations
+             WHERE client_id = ?
+               AND month = ?
+               AND year = ?
+               AND office_id = ?
+               AND user_id = ?
+               AND is_active = TRUE`, // Solo buscar las activas
+            [clientId, currentMonth, currentYear, officeId, userId]
+        );
 
-        // Si el pago está marcado como "Pagado", establece govRegistryCompletedAt a la fecha actual
-        if (paid === 'Pagado') {
-            govRegistryCompletedAt = today;
+        if (existingActiveAffiliations.length > 0) {
+            // Si se encuentra una afiliación activa para el mismo mes, año, oficina y usuario
+            await connection.rollback(); // Deshacer cualquier cambio anterior en la transacción (ej. creación de cliente, teléfonos)
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: 'Ya existe una afiliación activa para este cliente en el mes y año actual. Por favor, desactive la afiliación existente antes de crear una nueva.'
+                },
+                { status: 409 } // Conflict
+            );
         }
 
-        const affiliationResult = await pool.query( // Cambiado a affiliationResult
+        // 4. Si no hay duplicados activos, proceder a crear la nueva afiliación
+        const datePaidReceivedFormatted = affiliation.datePaidReceived
+            ? new Date(affiliation.datePaidReceived).toISOString().slice(0, 19).replace('T', ' ')
+            : currentTimestampFormatted;
+
+        let govRegistryCompletedAtFormatted: string | null = null;
+        if (affiliation.paid === 'Pagado') {
+            govRegistryCompletedAtFormatted = currentTimestampFormatted;
+        } else if (affiliation.govRegistryCompletedAt) {
+            govRegistryCompletedAtFormatted = new Date(affiliation.govRegistryCompletedAt).toISOString().slice(0, 19).replace('T', ' ');
+        }
+
+
+        const [affiliationResult] = await connection.execute<ResultSetHeader>(
             `INSERT INTO monthly_affiliations (
                 client_id, month, year, value,
                 eps_id, arl_id, ccf_id, pension_fund_id,
-                risk, observation, user_id, office_id, companies_id,
-                date_paid_received, gov_registry_completed_at, paid
-            ) VALUES (
-                $1, $2, $3, $4,
-                $5, $6, $7, $8,
-                $9, $10, $11, $12, $13,
-                $14, $15, $16
-            )
-            RETURNING *`, // Devuelve todas las columnas de la inserción
+                risk, observation, user_id, office_id, company_id,
+                date_paid_received, gov_record_completed_at, paid_status, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`, // is_active es TRUE para la nueva afiliación
             [
                 clientId,
                 currentMonth,
@@ -112,48 +146,34 @@ export async function POST(req: NextRequest) {
                 userId,
                 officeId,
                 companyId,
-                datePaidReceived,
-                govRegistryCompletedAt,
-                paid, // Pasa el estado de pago a la consulta
+                datePaidReceivedFormatted,
+                govRegistryCompletedAtFormatted,
+                affiliation.paid,
             ]
         );
 
-        // 4. Construir la respuesta incluyendo los datos de la afiliación creada.
-        const newAffiliation = affiliationResult.rows[0];  // Accedemos a la primera fila del resultado
-        const formattedDatePaidReceived = newAffiliation.date_paid_received
-            ? new Date(newAffiliation.date_paid_received).toISOString()
-            : null;
-        const formattedGovRegistryCompletedAt = newAffiliation.gov_registry_completed_at
-            ? new Date(newAffiliation.gov_registry_completed_at).toISOString()
-            : null;
+        await connection.commit();
 
-        const responseData = {
+        return NextResponse.json({
             success: true,
-            clientId,
-            affiliation: { // Incluimos los datos de la nueva afiliación
-                id: newAffiliation.id,
-                month: newAffiliation.month,
-                year: newAffiliation.year,
-                value: newAffiliation.value,
-                epsId: newAffiliation.eps_id,
-                arlId: newAffiliation.arl_id,
-                ccfId: newAffiliation.ccf_id,
-                pensionFundId: newAffiliation.pension_fund_id,
-                risk: newAffiliation.risk,
-                observation: newAffiliation.observation,
-                userId: newAffiliation.user_id,
-                officeId: newAffiliation.office_id,
-                companiesId: newAffiliation.companies_id,
-                paid: newAffiliation.paid,
-                datePaidReceived: formattedDatePaidReceived,
-                govRegistryCompletedAt: formattedGovRegistryCompletedAt,
+            message: 'Afiliación creada exitosamente.',
+            clientId: clientId,
+            affiliationId: affiliationResult.insertId,
+        }, { status: 201 });
+
+    } catch (error: any) {
+        console.error('Error al registrar afiliación:', error);
+        if (connection) await connection.rollback(); // Asegura el rollback en cualquier otro error
+
+        return NextResponse.json(
+            {
+                success: false,
+                error: 'Error interno del servidor al crear la afiliación.',
+                details: error.message || 'Error desconocido'
             },
-        };
-
-        return NextResponse.json(responseData);
-
-    } catch (error) {
-        console.error('Error en POST /api/clients-and-affiliations:', error);
-        return NextResponse.json({ success: false, error: 'Error al crear/vincular cliente, guardar teléfonos y crear afiliación' }, { status: 500 });
+            { status: 500 }
+        );
+    } finally {
+        if (connection) connection.release();
     }
 }
