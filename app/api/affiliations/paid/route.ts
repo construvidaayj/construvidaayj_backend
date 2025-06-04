@@ -1,62 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "../../lib/db"; // Asegúrate de que este 'pool' esté configurado para MySQL
+import { Pool } from 'mysql2/promise';
+import { pool } from "../../lib/db";
+
+type PaymentStatus = 'Pendiente' | 'Pagado' | 'En Proceso';
 
 export async function PUT(req: NextRequest): Promise<NextResponse> {
   try {
-    const body = await req.json();
-    const { affiliationId, paid } = body; // 'paid' es el nuevo estado que viene del frontend
+    const { affiliationId, paid }: { affiliationId?: number; paid?: PaymentStatus } = await req.json();
 
-    if (!affiliationId) {
-      return NextResponse.json({ message: 'ID de afiliación no proporcionado' }, { status: 400 });
+    if (!affiliationId || typeof affiliationId !== 'number') {
+      return NextResponse.json({ message: 'ID de afiliación no proporcionado o inválido.' }, { status: 400 });
     }
 
-    // Validamos que el estado de pago sea uno de los valores permitidos en tu tabla `payment_statuses`
-    if (typeof paid !== 'string' || !['Pendiente', 'Pagado'].includes(paid)) {
-      return NextResponse.json({ message: 'Estado de pago inválido. Debe ser "Pendiente" o "Pagado".' }, { status: 400 });
+    const validPaymentStatuses: PaymentStatus[] = ['Pendiente', 'Pagado', 'En Proceso'];
+    if (!paid || !validPaymentStatuses.includes(paid)) {
+      return NextResponse.json({ message: `Estado de pago inválido. Debe ser "${validPaymentStatuses.join('" o "')}".` }, { status: 400 });
     }
 
-    // `gov_record_completed_at` en tu esquema MySQL, no `gov_registry_completed_at`
     let govRecordCompletedAt: string | null = null;
     let datePaidReceived: string | null = null;
 
-    // Si el estado es 'Pagado', actualizamos las fechas. Si es 'Pendiente', las ponemos en NULL.
-    if (paid === 'Pagado') {
-      // MySQL usa `YYYY-MM-DD HH:MM:SS` para TIMESTAMP, o `YYYY-MM-DD` si solo quieres la fecha.
-      // `new Date().toISOString().slice(0, 19).replace('T', ' ')` para un formato de fecha y hora completo.
-      // Tu esquema tiene `TIMESTAMP`, así que un formato completo es más apropiado.
-      // datePaidReceived = new Date().toISOString().slice(0, 19).replace('T', ' ');
-      govRecordCompletedAt = new Date().toISOString().slice(0, 19).replace('T', ' '); // O podrías usar otra lógica para esta fecha
-    } else {
-      // Si el estado es 'Pendiente', las fechas asociadas deben ser NULL
-      // datePaidReceived = null;
-      govRecordCompletedAt = null;
+    // --- Inicio del cambio para la hora local de Colombia ---
+    const now = new Date();
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false, // Formato de 24 horas
+      timeZone: 'America/Bogota' // Zona horaria de Colombia (GMT-5)
+    };
+    const formatter = new Intl.DateTimeFormat('es-CO', options);
+    // Formatea y ajusta el string para que se parezca a 'YYYY-MM-DD HH:MM:SS'
+    // Primero, obtén la fecha y hora con el formato local: 'DD/MM/YYYY, HH:MM:SS'
+    const formattedDate = formatter.format(now);
+    // Luego, reordena y limpia para obtener 'YYYY-MM-DD HH:MM:SS'
+    const [datePart, timePart] = formattedDate.split(', ');
+    const [day, month, year] = datePart.split('/');
+    const currentTimestamp = `${year}-${month}-${day} ${timePart}`;
+    // --- Fin del cambio ---
+    
+    switch (paid) {
+      case 'Pagado':
+        govRecordCompletedAt = currentTimestamp;
+        datePaidReceived = currentTimestamp;
+        break;
+      case 'En Proceso':
+        datePaidReceived = currentTimestamp;
+        govRecordCompletedAt = null;
+        break;
+      case 'Pendiente':
+      default:
+        // Si es 'Pendiente', ambas fechas deben ser NULL
+        govRecordCompletedAt = null;
+        datePaidReceived = null;
+        break;
     }
 
     const query = `
       UPDATE monthly_affiliations
-      SET 
-        paid_status = ?, -- Nombre de columna correcto en tu esquema MySQL
-        gov_record_completed_at = ?, -- Nombre de columna correcto en tu esquema MySQL
+      SET
+        paid_status = ?,
+        gov_record_completed_at = ?,
+        date_paid_received = ?,
         updated_at = CURRENT_TIMESTAMP
-      WHERE 
-        id = ?
+      WHERE
+        id = ?;
     `;
+    const values = [paid, govRecordCompletedAt, datePaidReceived, affiliationId];
 
-    // Los valores deben coincidir con el orden de los '?' en la consulta
-    const values = [paid, govRecordCompletedAt, affiliationId];
+    const [result]: any = await (pool as Pool).execute(query, values);
 
-    const [result]: any[] = await pool.query(query, values); // mysql2/promise devuelve [rows, fields]
-
-    // Opcional: Puedes verificar si alguna fila fue afectada para dar una respuesta más precisa
     if (result.affectedRows === 0) {
-      return NextResponse.json({ message: 'Afiliación no encontrada o no hubo cambios' }, { status: 404 });
+      return NextResponse.json({ message: 'Afiliación no encontrada o el estado de pago ya está actualizado.' }, { status: 404 });
     }
 
-    return NextResponse.json({ message: 'Estado de pago actualizado correctamente' }, { status: 200 });
+    return NextResponse.json({ message: 'Estado de pago actualizado correctamente.' }, { status: 200 });
 
   } catch (error) {
     console.error('🔥 Error al actualizar estado de pago:', error);
-    // Considera si quieres exponer el error.message en desarrollo, pero no en producción.
-    return NextResponse.json({ message: 'Error del servidor al actualizar el estado de pago' }, { status: 500 });
+    return NextResponse.json({ message: 'Error interno del servidor al actualizar el estado de pago.' }, { status: 500 });
   }
 }
